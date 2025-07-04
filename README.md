@@ -21,7 +21,9 @@
 
 #### winner
 - the winners list will consist of those with correct guess, or those with the closest guess.
-- it has to be ensured that all the pooled money for each round minus the gas cost for ensuring randomness will be given to the winner or distributed equally among winners 
+- it has to be ensured that all the pooled money for each round minus the gas cost for ensuring randomness will be given to the winner or distributed equally among winners
+- (this winner picking logic is so gas inefficient, that the logic should be moved off-chain)
+- nested looping of 6 rounds and then loop through players in each round thrice that makes it O(6n)! (asmptotic complexicity remains O(n) but according to gas mechanics this is getting worse) 
 
 
 

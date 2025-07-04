@@ -13,8 +13,9 @@ interface IErrors {
     error AlreadyPooledMoney();
     error PoolingWindowClosed();
     error OnlyCroupierCanCall();
-    error GuessingWindowClosed();
+    error WindowClosed();
     error GuessingWindowNotClosed();
+    error InvalidProposal();
 }
 
 interface IGameEvents {
@@ -22,20 +23,20 @@ interface IGameEvents {
     event NewRoundStartingIn(uint256 roundNumber, uint256 timeInterval);
     event NewRoundStarted(uint256 roundNumber, uint256 remainingTime);
     event PlayerProposedGuess(address indexed player, uint256 guess, uint256 roundNumber);
+    event RequestedRandomness(uint256 requestId);
+    event RequestFulfilled(uint256 round);
+    event WinnersListed(uint8 roundNumber, address[] winners);
 }
 
 contract NewGame is VRFConsumerBaseV2, IErrors, IGameEvents {
 
     address payable[] private s_players;
-    uint256 private moneyPool;
-
-    event RequestedRandomness(uint256 requestId);
-    event RequestFulfilled(uint256 round);
 
     address public immutable i_croupier;
     uint256 internal constant FEE = 1 ether;
     uint256 internal immutable i_interval; // interval between rounds in seconds
     uint256 public immutable i_startTime; // whenever the game starts 
+    uint256 public immutable i_announceTime;
 
     //below are the CHAINLINK VRF VARIABLES 
     bytes32 private immutable i_keyHash; //max gas willing to pay for chainlink oracle's job
@@ -47,18 +48,10 @@ contract NewGame is VRFConsumerBaseV2, IErrors, IGameEvents {
     //we will be using the interface to implement the consumer base
     VRFCoordinatorV2Interface private COORDINATOR;
 
-    struct GameRound {
-        uint8 roundNumber;
-        uint256 guessingWindowTime;
-        uint256 range;
-        uint256 fees; 
-    }
-
-    GameRound[6] public s_gameRounds;
-
     mapping (uint256 => uint256) private secretNumberOfRound;
     mapping (uint256 => bool) public secretNumberIsReady;
     mapping (uint8 => bool) private s_roundStarted;
+    mapping (uint8 => uint256) public moneyPoolForRound;
 
     constructor(address _vrfCoordinator, bytes32 keyHash, uint64 subscriptionId) VRFConsumerBaseV2(_vrfCoordinator) {
 
@@ -81,12 +74,28 @@ contract NewGame is VRFConsumerBaseV2, IErrors, IGameEvents {
     function enterGame() external payable {
         require(enteredGame[msg.sender] == false, AlreadyInGame());
         require(msg.value == FEE, FeeNotPaid());
+        require(block.timestamp< i_startTime, WindowClosed());
 
         enteredGame[msg.sender] = true;
         s_players.push(payable(msg.sender));
-        moneyPool += msg.value;
+        moneyPoolForRound[1] += msg.value;
 
         emit PlayerEntered(msg.sender, block.timestamp);
+    }
+
+    function submitGuess(uint8 roundNumber, uint256 guess) external payable {
+        require(enteredGame[msg.sender], MustEnterGameFirst());
+        require(roundNumber>=1 && roundNumber<=6, "valid Round Number required");
+        require(msg.value == FEE* uint256(roundNumber-1), FeeNotPaid());
+
+        require(block.timestamp< i_startTime, WindowClosed());
+
+        require(guess>0 && guess<10*roundNumber, InvalidProposal());
+
+        s_playerGuessForRound[msg.sender][roundNumber] = guess;
+        moneyPoolForRound[roundNumber] += msg.value;
+
+        emit PlayerProposedGuess(msg.sender, guess, roundNumber);
     }
 
     function startRound(uint8 roundNumber) external onlyCroupier {
@@ -104,43 +113,50 @@ contract NewGame is VRFConsumerBaseV2, IErrors, IGameEvents {
 
         s_roundStarted[roundNumber] = true;
     }
+
+    mapping (uint8 => address[]) public winnersForRound; // round to winners list
     
     function fulfillRandomWords(uint256 requestId, uint256[] memory randomWords) internal override {
         uint256 secretNumber;
-        for(uint8 i=1; i<=s_gameRounds.length; i++){
+        for(uint8 i=1; i<=6; i++){
 
             uint256 difficulty = 10**i;
-            uint256 secretNumber = (randomNumber[0] % difficulty);
+            secretNumber = (randomWords[i-1] % difficulty) + 1; 
 
             secretNumberOfRound[i] = secretNumber;
             secretNumberIsReady[i] = true;
-
-            s_gameRounds[i] = GameRound({
-                roundNumber: i+1,
-                guessingWindowTime: i*10,
-                range: difficulty,
-                fees: FEE*i
-            });
         }
     }
 
+    function _absDiff(uint256 a, uint256 b) internal pure returns (uint256) {
+        return (a > b) ? (a - b) : (b - a);
+    }
 
-    function enterRoundproposeGuesses(uint8 round, uint256 guess) external payable{ 
-        round = round - 1; // appropriate indexing for array
-        GameRound memory gameRound = s_gameRounds[round];
-        s_gameRounds[round].roundNumber = round +1;
+    function announceWinners() external onlyCroupier {
+        require(block.timestamp>= i_announceTime);
 
-        require(enteredGame[msg.sender], MustEnterGameFirst());
-        require(s_roundStarted[0], "Round not started yet");
+        uint256 smallestDiff = type(uint256).max; 
+        for(uint256 i=0; i<s_players.length; i++){
+            for (uint8 r=1; r<=6; r++) {
+                bool roundHasExactGuess = false;
+                uint256 diff = _absDiff(s_playerGuessForRound[s_players[i]][r], secretNumberOfRound[r]);
 
-        require(block.timestamp < i_startTime + (gameRound[round]*i_interval) 
-        && block.timestamp > i_startTime + ((gameRound[round]-1)*i_interval), GuessingWindowClosed());
-
-        require(msg.value == gameRound.fees, FeeNotPaid());
-
-        require(s_playerGuessForRound[msg.sender][round] == 0, "Already proposed a guess for this round");
-
-        s_playerGuessForRound[msg.sender][round] = guess;
-        emit PlayerProposedGuess(msg.sender, guess, round + 1);
+                if(s_playerGuessForRound[s_players[i]][r] == secretNumberOfRound[r]){
+                    roundHasExactGuess = true;
+                    // smallestDiff is 0 by default so without the bool property, this if logic cannot prove anything, there will be a bug!
+                    winnersForRound[r].push(s_players[i]);
+                }
+                if (roundHasExactGuess != true){
+                    if (diff< smallestDiff){
+                        smallestDiff = diff;
+                        delete winnersForRound[r];
+                        winnersForRound[r].push(s_players[i]);
+                    } else if (diff == smallestDiff){
+                        winnersForRound[r].push(s_players[i]);
+                    }
+                }
+                emit WinnersListed(r, winnersForRound[r]);
+            }
+        }
     }
 }

@@ -3,22 +3,25 @@
 
 ### Game.sol => Game Rules:
 #### overview: 
-- each game round will have a range as 10^roundNumber 
+- each game round (6 rounds) will have a range as 10^roundNumber 
 - a player has to guess a number within this range 
-- difficulty increases in each round as the range to guess from increases
-- winner would be the participant(s) who guess(es) the correct or closest value.
+- difficulty increases in each round as the range increases
+- participant(s) proposing the correct or closest value would be considered winner(s).
 
 #### randomness:
 - using chainlink-evm VRF to generate random number within the range 
 - doing this will cost some eth due to gas cost of execution of vrf
-- only the coupier would know this random number 
+- this will be executed once the participating and guessing windows are closed.
 
 #### pool: 
-- the pool money will increase with subsequently increasing difficulty
-- there has to be a fixed window time open for each round for pooling money and proposing guess
-- a player has to deposit a participating fee first and then can pool eth for any round they want to 
+- each player pays the fee for first round as entry fee, (must propose guess for first round).
+- 
+- a player has to deposit a participating fee first and then can pool eth for further rounds if they want to participate. 
 - the pooled money will be stored in the contract
-- it also has to be ensured that all the pooled money for each round minus the gas cost for ensuring randomness will be given to the winner or distributed equally among winners 
+
+#### winner
+- the winners list will consist of those with correct guess, or those with the closest guess.
+- it has to be ensured that all the pooled money for each round minus the gas cost for ensuring randomness will be given to the winner or distributed equally among winners 
 
 
 

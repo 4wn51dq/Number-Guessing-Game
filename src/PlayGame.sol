@@ -135,28 +135,51 @@ contract NewGame is VRFConsumerBaseV2, IErrors, IGameEvents {
     function announceWinners() external onlyCroupier {
         require(block.timestamp>= i_announceTime);
 
-        uint256 smallestDiff = type(uint256).max; 
-        for(uint256 i=0; i<s_players.length; i++){
-            for (uint8 r=1; r<=6; r++) {
-                bool roundHasExactGuess = false;
-                uint256 diff = _absDiff(s_playerGuessForRound[s_players[i]][r], secretNumberOfRound[r]);
+        for(uint8 r=1; r<=6; r++){
+            bool roundHasExactGuess = false;
+            uint256 smallestDiff = type(uint256).max; 
 
+            //the first loop will check if someone has the exact guess and announce accordingly
+
+            for (uint256 i=0; i<s_players.length; i++) {
                 if(s_playerGuessForRound[s_players[i]][r] == secretNumberOfRound[r]){
                     roundHasExactGuess = true;
-                    // smallestDiff is 0 by default so without the bool property, this if logic cannot prove anything, there will be a bug!
                     winnersForRound[r].push(s_players[i]);
                 }
-                if (roundHasExactGuess != true){
-                    if (diff< smallestDiff){
+            }
+            // Now if no one has exact guess then only the below logic will execute in this round.
+            if (!roundHasExactGuess){
+                // first generate the smallest diff to exist, and from the bool logic diff cannot be 0.
+                for (uint256 i=0; i<s_players.length; i++){
+                    uint256 diff = _absDiff(s_playerGuessForRound[s_players[i]][r], secretNumberOfRound[r]);
+                    if(diff< smallestDiff){
                         smallestDiff = diff;
-                        delete winnersForRound[r];
-                        winnersForRound[r].push(s_players[i]);
-                    } else if (diff == smallestDiff){
+                    }
+                }
+                for (uint256 i=0; i<s_players.length; i++){
+                    uint256 diff = _absDiff(s_playerGuessForRound[s_players[i]][r], secretNumberOfRound[r]);
+                    if (diff == smallestDiff){
                         winnersForRound[r].push(s_players[i]);
                     }
                 }
-                emit WinnersListed(r, winnersForRound[r]);
+            }
+            emit WinnersListed(r, winnersForRound[r]);
+        }
+    }
+
+    function rewardWinners() private {
+        // for each round r, 
+        // and for i in each winner in winnersForRound[r]
+        // winnersForRound[r][i].call{value: (moneyPoolForRound[r] - GasCostForUsingVRF)/winnersForRound[r].length}(""); 
+
+        for (uint8 r=1; r<6; r++){
+            for(uint256 i=0; i<winnersForRound[r].length; i++){
+                (bool rewarded, )= winnersForRound[r][i].call{value: (moneyPoolForRound[r])/winnersForRound[r].length}("");
+                require (rewarded, "Rewarding Failed");
             }
         }
     }
 }
+
+
+// how can this game be destroyed? 

@@ -39,7 +39,7 @@ contract NewGame is AutomationCompatibleInterface, VRFConsumerBaseV2, IErrors, I
     address payable[] private s_players;
 
     address public immutable i_croupier;
-    uint256 internal constant FEE = 1 ether;
+    uint256 internal immutable FEE;
     uint256 internal immutable i_interval; // interval between rounds in seconds
     uint256 public immutable i_startTime; // whenever the game starts 
     uint256 private s_lastTimeStamp;
@@ -63,16 +63,28 @@ contract NewGame is AutomationCompatibleInterface, VRFConsumerBaseV2, IErrors, I
     mapping (uint8 => address[]) public winnersForRound; 
     mapping (uint256 => uint8) public requestIdForRound; 
     mapping (address => mapping(uint8 => uint256)) private s_playerGuessForRound;
-    mapping (address => bool) private enteredGame;
+    mapping (address => bool) public enteredGame;
 
 
-    constructor(address _vrfCoordinator, bytes32 keyHash, uint64 subscriptionId) VRFConsumerBaseV2(_vrfCoordinator) {
+    constructor( address _vrfCoordinator, 
+        bytes32 keyHash, 
+        uint64 subscriptionId,
+        uint256 _FEE,
+        uint256 startTime,
+        uint256 announceTime,
+        uint256 interval
+        ) VRFConsumerBaseV2(_vrfCoordinator) {
 
         i_croupier = msg.sender;
 
         i_keyHash = keyHash;
         i_subscriptionId = subscriptionId;
         COORDINATOR = VRFCoordinatorV2Interface(_vrfCoordinator);
+
+        FEE= _FEE;
+        i_startTime = startTime;
+        i_announceTime = announceTime;
+        i_interval = interval;
     }
 
     modifier onlyCroupier() {

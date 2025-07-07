@@ -4,7 +4,7 @@ pragma solidity ^0.8.30;
 // import {GameStructure} from "../src/Game.sol";
 import {VRFCoordinatorV2Interface} from "../lib/chainlink-evm/contracts/src/v0.8/vrf/interfaces/VRFCoordinatorV2Interface.sol";
 import {VRFConsumerBaseV2} from "../lib/chainlink-evm/contracts/src/v0.8/vrf/VRFConsumerBaseV2.sol";
-// import {AutomationCompatible} from "../lib/chainlink-evm/contracts/src/v0.8/automation/AutomationCompatible.sol";
+import {AutomationCompatibleInterface} from "../lib/chainlink-evm/contracts/src/v0.8/automation/interfaces/AutomationCompatibleInterface.sol";
 
 
 interface IErrors {
@@ -17,6 +17,10 @@ interface IErrors {
     error WindowClosed();
     error GuessingWindowNotClosed();
     error InvalidProposal();
+    error OutOfTimeBound();
+    error RoundHasBegun();
+    error TooEarlyToAnnounce();
+    error RewardingFailed();
 }
 
 interface IGameEvents {
@@ -30,7 +34,7 @@ interface IGameEvents {
     event WinnerRewarded(uint8 roundNumber, address[] winners, uint256 reward);
 }
 
-contract NewGame is /* AutomationCompatible */ VRFConsumerBaseV2, IErrors, IGameEvents {
+contract NewGame is AutomationCompatibleInterface, VRFConsumerBaseV2, IErrors, IGameEvents {  
 
     address payable[] private s_players;
 
@@ -38,6 +42,7 @@ contract NewGame is /* AutomationCompatible */ VRFConsumerBaseV2, IErrors, IGame
     uint256 internal constant FEE = 1 ether;
     uint256 internal immutable i_interval; // interval between rounds in seconds
     uint256 public immutable i_startTime; // whenever the game starts 
+    uint256 private s_lastTimeStamp;
     uint256 public immutable i_announceTime;
 
     /* below are the CHAINLINK VRF VARIABLES */
@@ -75,12 +80,24 @@ contract NewGame is /* AutomationCompatible */ VRFConsumerBaseV2, IErrors, IGame
         _;
     }
 
-    function checkUpKeep(bytes calldata checkData) public view returns (bool upKeepNeeded, bytes memory returnInfo) {
+    function checkUpkeep(bytes calldata /*checkData*/) external override view returns (bool upKeepNeeded, bytes memory returnInfo) {
+        bool itsTime = (block.timestamp-s_lastTimeStamp) >= i_interval;
+        bool hasBalance = address(this).balance > 0;
+        bool hasPlayers = s_players.length >0;
 
+        upKeepNeeded = itsTime && hasBalance && hasPlayers;
+        
+        uint8 _roundNumber = uint8((block.timestamp - s_lastTimeStamp)/i_interval);
+        returnInfo = abi.encode(_roundNumber);
     } 
 
-    function performUpKeep(bytes calldata) public view {
+    function performUpkeep(bytes calldata returnInfo) public {
+        uint8 _roundNumber = abi.decode(returnInfo, (uint8));
 
+        require(block.timestamp >= i_startTime + (_roundNumber * i_interval), "Too early");
+        s_lastTimeStamp = block.timestamp;
+
+        startRound(_roundNumber);
     }
 
     function enterGame(uint256 guessForRound1) external payable {
@@ -101,7 +118,7 @@ contract NewGame is /* AutomationCompatible */ VRFConsumerBaseV2, IErrors, IGame
 
     function submitGuess(uint8 roundNumber, uint256 guess) external payable {
         require(enteredGame[msg.sender], MustEnterGameFirst());
-        require(roundNumber>=1 && roundNumber<=6, "valid Round Number required");
+        require(roundNumber>=1 && roundNumber<=6, InvalidProposal());
         require(msg.value == FEE* uint256(roundNumber-1), FeeNotPaid());
 
         require(block.timestamp< i_startTime, WindowClosed());
@@ -116,11 +133,10 @@ contract NewGame is /* AutomationCompatible */ VRFConsumerBaseV2, IErrors, IGame
         emit PlayerProposedGuess(msg.sender, guess, roundNumber);
     }
 
-    function startRound(uint8 roundNumber) external onlyCroupier {
-        require(block.timestamp == i_startTime + (roundNumber * i_interval), "Too early to start round");
-        require(!s_roundStarted[roundNumber], "Round already started");
+    function startRound(uint8 roundNumber) public onlyCroupier {
+        require(block.timestamp == i_startTime + (roundNumber * i_interval), OutOfTimeBound());
+        require(!s_roundStarted[roundNumber], RoundHasBegun());
 
-        require(msg.sender == i_croupier, "Only croupier can request random words");
         uint256 requestId = COORDINATOR.requestRandomWords(
             i_keyHash,
             i_subscriptionId,
@@ -153,7 +169,7 @@ contract NewGame is /* AutomationCompatible */ VRFConsumerBaseV2, IErrors, IGame
     }
 
     function announceWinners() external onlyCroupier {
-        require(block.timestamp>= i_announceTime);
+        require(block.timestamp>= i_announceTime, TooEarlyToAnnounce());
 
         for(uint8 r=1; r<=6; r++){
             bool roundHasExactGuess = false;
@@ -194,13 +210,13 @@ contract NewGame is /* AutomationCompatible */ VRFConsumerBaseV2, IErrors, IGame
             for(uint256 i=0; i<winnersForRound[r].length; i++){
                 if(s_playerGuessForRound[winnersForRound[r][i]][r] == secretNumberOfRound[r]){
                     (bool rewarded, )= winnersForRound[r][i].call{value: fullReward}("");
-                    require (rewarded, "Rewarding Failed");
+                    require (rewarded, RewardingFailed());
 
                     emit WinnerRewarded(r, winnersForRound[r], fullReward);
 
                 } else {
                     (bool rewarded, )= winnersForRound[r][i].call{value: halfReward}("");
-                    require (rewarded, "Rewarding Failed");
+                    require (rewarded, RewardingFailed());
 
                     emit WinnerRewarded(r, winnersForRound[r], halfReward);
                 }

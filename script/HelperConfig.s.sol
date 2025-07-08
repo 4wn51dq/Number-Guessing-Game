@@ -16,6 +16,8 @@ abstract contract CodeConstants {
 contract HelperConfig is Script, CodeConstants{
 
     error HelperConfifg__InvalidChainId();
+    
+    address public subscriptionOwner;
 
     struct NetworkConfig {
         address vrfCoordinator;
@@ -68,6 +70,9 @@ contract HelperConfig is Script, CodeConstants{
             FEE: 0.01 ether
         });
 
+        (,,address subscriptionOwner,) = mockCoordinator.getSubscription(localNetworkConfig.subscriptionId);
+
+
         return localNetworkConfig;
     }
 
@@ -75,4 +80,8 @@ contract HelperConfig is Script, CodeConstants{
         return getNetworkConfigByChainId(block.chainid);
     }
 
+    function getSubscriptionOwner() external view returns (address) {
+        return subscriptionOwner;
+    }
+    
 }

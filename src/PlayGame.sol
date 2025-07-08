@@ -21,6 +21,7 @@ interface IErrors {
     error RoundHasBegun();
     error TooEarlyToAnnounce();
     error RewardingFailed();
+    error NoSuchRound();
 }
 
 interface IGameEvents {
@@ -58,7 +59,7 @@ contract NewGame is AutomationCompatibleInterface, VRFConsumerBaseV2, IErrors, I
     mapping (uint8 => address payable[]) private s_playersInRound;
     mapping (uint256 => uint256) private secretNumberOfRound;
     mapping (uint256 => bool) public secretNumberIsReady;
-    mapping (uint8 => bool) private s_roundStarted;
+    mapping (uint8 => bool) public s_roundStarted;
     mapping (uint8 => uint256) public moneyPoolForRound;
     mapping (uint8 => address[]) public winnersForRound; 
     mapping (uint256 => uint8) public requestIdForRound; 
@@ -116,7 +117,7 @@ contract NewGame is AutomationCompatibleInterface, VRFConsumerBaseV2, IErrors, I
         require(enteredGame[msg.sender] == false, AlreadyInGame());
         require(msg.value == FEE, FeeNotPaid());
         require(block.timestamp< i_startTime, WindowClosed());
-        require(guessForRound1>0 && guessForRound1<10, InvalidProposal());
+        require(guessForRound1>0 && guessForRound1<10**1, InvalidProposal());
 
         s_playerGuessForRound[msg.sender][1] = guessForRound1;
 
@@ -130,12 +131,12 @@ contract NewGame is AutomationCompatibleInterface, VRFConsumerBaseV2, IErrors, I
 
     function submitGuess(uint8 roundNumber, uint256 guess) external payable {
         require(enteredGame[msg.sender], MustEnterGameFirst());
-        require(roundNumber>=1 && roundNumber<=6, InvalidProposal());
+        require(roundNumber>1 && roundNumber<=6, NoSuchRound());
         require(msg.value == FEE* uint256(roundNumber-1), FeeNotPaid());
 
         require(block.timestamp< i_startTime, WindowClosed());
 
-        require(guess>0 && guess<10*roundNumber, InvalidProposal());
+        require(guess>0 && guess<10**roundNumber, InvalidProposal());
 
         s_playerGuessForRound[msg.sender][roundNumber] = guess;
         moneyPoolForRound[roundNumber] += msg.value;
@@ -146,6 +147,7 @@ contract NewGame is AutomationCompatibleInterface, VRFConsumerBaseV2, IErrors, I
     }
 
     function startRound(uint8 roundNumber) public onlyCroupier {
+        require(roundNumber>0 && roundNumber<=6, NoSuchRound());
         require(block.timestamp == i_startTime + (roundNumber * i_interval), OutOfTimeBound());
         require(!s_roundStarted[roundNumber], RoundHasBegun());
 
@@ -234,6 +236,24 @@ contract NewGame is AutomationCompatibleInterface, VRFConsumerBaseV2, IErrors, I
                 }
             }
         }
+    }
+
+    function getGuess(address player, uint8 round) external view returns (uint256) {
+        require(round>0 && round <=6, NoSuchRound());
+        return s_playerGuessForRound[player][round];
+    }
+
+    function getPlayersListOfRound(uint8 round) external view returns (address payable[] memory) {
+        require(round>0 && round <=6, NoSuchRound());
+        return s_playersInRound[round];
+    }
+
+    function getCroupier() external view returns (address) {
+        return i_croupier;
+    }
+
+    function getInterval() external view returns (uint256) {
+        return i_interval;
     }
 }
 

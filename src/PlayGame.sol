@@ -160,7 +160,6 @@ contract NewGame is AutomationCompatibleInterface, VRFConsumerBaseV2, IErrors, I
         );
 
         requestIdForRound[requestId] = roundNumber;
-
         s_roundStarted[roundNumber] = true;
     }
     

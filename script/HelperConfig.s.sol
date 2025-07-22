@@ -3,6 +3,8 @@ pragma solidity ^0.8.30;
 
 import {Script} from "forge-std/Script.sol";
 import {VRFCoordinatorV2Mock} from "../lib/chainlink-evm/contracts/src/v0.8/vrf/mocks/VRFCoordinatorV2Mock.sol";
+import {LinkToken} from "../test/mocks/LinkToken.sol";
+
 
 abstract contract CodeConstants {
     uint256 internal constant SEPOLIA_CHAIN_ID = 11155111;
@@ -24,10 +26,11 @@ contract HelperConfig is Script, CodeConstants{
         bytes32 keyHash; 
         uint64 subscriptionId;
         uint256 FEE;
+        address linkTokenContractAddress;
     }
 
     NetworkConfig public localNetworkConfig;
-    mapping (uint256 => NetworkConfig) public networkConfigs;
+    mapping (uint256 => NetworkConfig) public networkConfigs; /** get network configuration via chain id */
 
     constructor() {
         networkConfigs[SEPOLIA_CHAIN_ID] = getSepoliaETHConfig();
@@ -48,18 +51,20 @@ contract HelperConfig is Script, CodeConstants{
             vrfCoordinator: 0x5CE8D5A2BC84beb22a398CCA51996F7930313D61,
             keyHash: 0x1770bdc7eec7771f7ba4ffd640f34260d7f095b79c92d34a5b2551d6f6cfd2be,
             subscriptionId: 0,
-            FEE: 0.01 ether
+            FEE: 0.01 ether,
+            linkTokenContractAddress: 0x779877A7B0D9E8603169DdbD7836e478b4624789
         });
     }
 
     function getOrCreateAnvilEthConfig() public returns (NetworkConfig memory) {
-        if (localNetworkConfig.vrfCoordinator != address(0)) {
+        if (localNetworkConfig.vrfCoordinator != address(0) && localNetworkConfig.subscriptionId!=0) {
             return localNetworkConfig;
         }
 
         vm.startBroadcast();
 
         VRFCoordinatorV2Mock mockCoordinator = new VRFCoordinatorV2Mock(MOCK_BASE_FEE, MOCK_GAS_PRICE_LINK);
+        LinkToken linkToken = new LinkToken();
 
         vm.stopBroadcast();
 
@@ -67,21 +72,13 @@ contract HelperConfig is Script, CodeConstants{
             vrfCoordinator: address(mockCoordinator),
             keyHash: 0x1770bdc7eec7771f7ba4ffd640f34260d7f095b79c92d34a5b2551d6f6cfd2be,
             subscriptionId: 0,
-            FEE: 0.01 ether
+            FEE: 0.01 ether,
+            linkTokenContractAddress: address(linkToken)
         });
-
-        (,,address subscriptionOwner,) = mockCoordinator.getSubscription(localNetworkConfig.subscriptionId);
-
-
         return localNetworkConfig;
     }
 
     function getConfig() public returns (NetworkConfig memory){
         return getNetworkConfigByChainId(block.chainid);
     }
-
-    function getSubscriptionOwner() external view returns (address) {
-        return subscriptionOwner;
-    }
-    
 }

@@ -5,6 +5,7 @@ import {Test /*, console*/} from "../../lib/forge-std/src/Test.sol";
 import {DeployGame} from "../../script/DeployGame.s.sol";
 import {NewGame} from "../../src/PlayGame.sol";
 import {HelperConfig} from "../../script/DeployGame.s.sol";
+import {Vm} from "";
 
 contract UnitTest is Test {
     NewGame public newGame;
@@ -35,10 +36,8 @@ contract UnitTest is Test {
         vrfCoordinator = config.vrfCoordinator;
         keyHash = config.keyHash;
         subscriptionId = config.subscriptionId;
-        FEE = config.FEE;
+        FEE = config.FEE; 
         
-
-
         VALID_FEE_FOR_ROUND = FEE*(VALID_ROUNDNUMBER - 1);
 
 
@@ -198,12 +197,12 @@ contract UnitTest is Test {
     }
 
     function testTheRoundHasNotAlreadyStarted() public {
-        vm.warp(startTime+ (VALID_ROUNDNUMBER* newGame.getInterval()));
+        vm.warp(startTime- (VALID_ROUNDNUMBER* newGame.getInterval()));
         vm.prank(newGame.getCroupier());
-        newGame.startRound(VALID_ROUNDNUMBER);
+        vm.expectRevert();
 
-        assertTrue(newGame.s_roundStarted(VALID_ROUNDNUMBER));
+        newGame.startRound(VALID_ROUNDNUMBER);
     }
 
-
+    function 
 }
